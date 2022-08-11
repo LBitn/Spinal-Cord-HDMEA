@@ -12,6 +12,9 @@ using HDF5
 using JLD
 using DelimitedFiles
 using DataFrames
+using Statistics
+using Distributions
+using BinningAnalysis
 
 export div_ab
 export size_segments
@@ -21,6 +24,13 @@ export debug_list_vals
 export VariablesBRW
 export searchdir
 export Digital2Analogue
+export donoho
+export Sparsity
+export Density
+export neighborgs
+export MeanΔxCI
+export Get_Groups
+
 # -------------------------------------------------------------------------------------------------------- #
 """
     searchdir( path::String, key::String ) -> Vector{String}
@@ -292,6 +302,108 @@ function Digital2Analogue( Variables::Dict{ String, Any }, DigitalValue::UInt16 
     MVOffset = Variables[ "MVOffset" ]; ADCCountsToMV = Variables[ "ADCCountsToMV" ];
     AnalogValue = MVOffset + ( DigitalValue * ADCCountsToMV );
     return AnalogValue
+end
+# using Statistics
+# using Distributions
+# using BinningAnalysis
+# -------------------------------------------------------------------------------------------------------- #
+"""
+    Noise-adaptive Optimal Thresholding
+"""
+@inline donoho( x ) =  ( median( abs.( x ) ) / 0.6745 );
+# -------------------------------------------------------------------------------------------------------- #
+@inline Sparsity( count_non_zeros::Int64, total_elements_of_A::Int64 ) = 1 - count_non_zeros/total_elements_of_A;
+# -------------------------------------------------------------------------------------------------------- #
+@inline Density( W::Vector{Any} ) = length( findall( ( length.( W ) ./ length( W ) ) .>= ( mean( length.( W )./length( W ) ) + 2*std( length.( W )./length( W ) ) ) ) );
+# -------------------------------------------------------------------------------------------------------- #
+"""
+    Get_Groups( W::Vector{Int64} ) -> grupos::Vector{Any}, loose::( Vector{Any} )
+       Groups of adjacent channels are formed from the initial indexes W. Those channels separated from the bulk of the others is considered loose ones.
+"""
+function Get_Groups( W::Vector{Int64} )
+    grupos = [ ];
+    for i in W
+        _, vecinos = neighborgs( i, 1 );
+        grupo = sort( intersect( vecinos, W ) );
+        if isempty( grupo )
+            push!( grupos, i )
+        else
+            push!( grupos, vcat( grupo, i ) )
+        end
+    end
+    loose = grupos[ findall( length.( grupos ) .== 1 ) ];
+    deleteat!( grupos, findall( length.( grupos ) .== 1 ) );
+    a = length( grupos ); grupos = reverberation( grupos ); b = length( grupos );
+    while a != b
+        a = length( grupos ); grupos = reverberation( grupos ); b = length( grupos );
+    end
+    return grupos, loose
+end
+# -------------------------------------------------------------------------------------------------------- #
+"""
+    reverberation( grupos::Vector{Any} ) -> more_groups::Vector{Any}
+        Intermediate step for Get_Groups function
+"""
+function reverberation( grupos::Vector{Any} )
+    adjoining_channels = 0
+    for i in grupos
+        adjoining_channels = vcat( adjoining_channels, i )
+    end
+    adjoining_channels = adjoining_channels[ adjoining_channels .!= 0 ];
+    adjoining_channels = unique( adjoining_channels );
+    more_groups = [ ]
+    for i in adjoining_channels
+        temporal = 0
+        for j = 1:length( grupos )
+            if !isempty( findall( grupos[ j ] .== i ) )
+                temporal = vcat( temporal, grupos[ j ] );
+            end
+        end
+        temporal = temporal[ temporal .!= 0 ];
+        new_group = sort( unique( temporal ) );
+
+        if !isempty( new_group )
+            if !isempty( more_groups )
+                temp = last( more_groups );
+                if !isequal( temp, new_group )
+                    push!( more_groups, new_group );
+                end
+            else
+                push!( more_groups, new_group );
+            end
+        end
+    end
+    return more_groups
+end
+# -------------------------------------------------------------------------------------------------------- #
+"""
+    neighborgs( C::Int64, d::Int64 ) ->
+        -> A = Array( ( d*2 ) + 1, ( d * 2 ) + 1 ), v = vec( 2*( ( d * 2 ) + 1 ) - 1 );
+        The d-neighborhood is calculated from the channel (C) as a center
+        A = array where C is the center and is in chip order
+        v = same neighboring channels as A but in vector form and without C ( 8 channels )
+"""
+function neighborgs( C::Int64, d::Int64 )
+    Layout = reverse( reshape( collect( 1:4096 ), 64, 64 )', dims = 1 );
+    x_c = findall( Layout .== C )[ ][ 2 ]; y_c = findall( Layout .== C )[ ][ 1 ];
+    aux = [ ( x_c - d ),( x_c + d ), ( y_c - d ), ( y_c + d ) ]
+    aux[ aux .< 1 ] .= 1; aux[ aux .> 64 ] .= 64;
+    A = Layout[ aux[ 3 ]:aux[ 4 ], aux[ 1 ]:aux[ 2 ] ];
+    v = vec( A )[ vec( A ) .!= C ];
+    return A, v
+end
+# -------------------------------------------------------------------------------------------------------- #
+"""
+    MeanΔxCI( W::Vector, percent::Float64 ) -> xmean, Δx, C1, C2 (::Float64)
+    Assumes a Normal distribution. Obtains the confidence interval with "percent" quantile,
+    Returns mean, standard error, CI superior and CI inferior
+"""
+function MeanΔxCI( W::Vector, percent::Float64 )
+    xmean, Δx = BinningAnalysis.jackknife( identity, W );
+    d = Distributions.Normal( xmean, std( W ) );
+    C1 = xmean + ( Δx * Distributions.quantile( d, percent ) );
+    C2 = xmean - ( Δx * Distributions.quantile( d, percent ) );
+    return xmean, Δx, C1, C2
 end
 
 end
