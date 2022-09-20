@@ -564,8 +564,6 @@ end
 # -------------------------------------------------------------------------------------------------------- #
 """
 """
-# using JuliaTools.ms2frames
-
 function ΔV( Variables::Dict{String, Any}, BIN::Matrix{Float64}, ΔT::Int64, descartados::Vector{Int64} )
 
     SamplingRate = Variables[ "SamplingRate" ][ 1 ];
