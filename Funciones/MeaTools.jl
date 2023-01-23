@@ -157,7 +157,6 @@ GetVarsHDF5( FILEBRW::String ) -> D::Dict{Any, Any}, FILEPATHS::String
 function GetVarsHDF5( FILEBRW::String )
     BRW = h5open( FILEBRW, "r" );
     Groups = keys( BRW );
-    Groups = keys( BRW );
     AllGroups = [ ];
     AllAtributes = keys( attributes( BRW ) );
     while !isempty( Groups )
@@ -577,7 +576,8 @@ function AllMetrics( Variables::Dict{Any, Any}, BIN::Matrix{Float64}, ΔT::Real,
     Ws[ :, 2 ] = STDΔV( Variables, FiltBIN, ΔT );
     # 2 Numero de valores de voltaje presentes en cada canal
     [ Ws[ k , 3 ] = length( unique( round.( BIN[ k, : ], digits = 2 ) ) ) for k in channels ];
-        [ Ws[ k , 4 ] = length( unique( round.( FiltBIN[ k, : ], digits = 2 ) ) ) for k in channels ];
+    [ Ws[ k , 4 ] = length(
+        unique( round.( FiltBIN[ k, : ], digits = 2 ) ) ) for k in channels ];
     # 3 y 4
     EventsFiltDin = [ ]; EventsRawDin = [ ];
     for i in channels
